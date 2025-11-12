@@ -41,7 +41,7 @@ pub struct EthEvmBuilder<DB: Database, I = NoOpInspector> {
 
 impl<DB: Database> EthEvmBuilder<DB, NoOpInspector> {
     /// Creates a builder from the provided `EvmEnv` and database.
-    pub const fn new(db: DB, env: EvmEnv) -> Self {
+    pub const fn new(db: DB, env: EvmEnv<BlockEnv, CfgEnv>) -> Self {
         Self {
             db,
             block_env: env.block_env,
@@ -194,6 +194,8 @@ where
     PRECOMPILE: PrecompileProvider<EthEvmContext<DB>, Output = InterpreterResult>,
 {
     type DB = DB;
+    type Block = BlockEnv;
+    type Config = CfgEnv;
     type Tx = TxEnv;
     type Error = EVMError<DB::Error>;
     type HaltReason = HaltReason;
@@ -201,7 +203,7 @@ where
     type Precompiles = PRECOMPILE;
     type Inspector = I;
 
-    fn block(&self) -> &BlockEnv {
+    fn block(&self) -> &Self::Block {
         &self.block
     }
 
@@ -229,7 +231,7 @@ where
         self.inner.system_call_with_caller(caller, contract, data)
     }
 
-    fn finish(self) -> (Self::DB, EvmEnv<Self::Spec>) {
+    fn finish(self) -> (Self::DB, EvmEnv<Self::Block, Self::Config>) {
         let Context { block: block_env, cfg: cfg_env, journaled_state, .. } = self.inner.ctx;
 
         (journaled_state.database, EvmEnv { block_env, cfg_env })
@@ -260,20 +262,26 @@ pub struct EthEvmFactory;
 impl EvmFactory for EthEvmFactory {
     type Evm<DB: Database, I: Inspector<EthEvmContext<DB>>> = EthEvm<DB, I, Self::Precompiles>;
     type Context<DB: Database> = Context<BlockEnv, TxEnv, CfgEnv, DB>;
+    type Block = BlockEnv;
+    type Config = CfgEnv;
     type Tx = TxEnv;
     type Error<DBError: core::error::Error + Send + Sync + 'static> = EVMError<DBError>;
     type HaltReason = HaltReason;
     type Spec = SpecId;
     type Precompiles = PrecompilesMap;
 
-    fn create_evm<DB: Database>(&self, db: DB, input: EvmEnv) -> Self::Evm<DB, NoOpInspector> {
+    fn create_evm<DB: Database>(
+        &self,
+        db: DB,
+        input: EvmEnv<Self::Block, Self::Config>,
+    ) -> Self::Evm<DB, NoOpInspector> {
         EthEvmBuilder::new(db, input).build()
     }
 
     fn create_evm_with_inspector<DB: Database, I: Inspector<Self::Context<DB>>>(
         &self,
         db: DB,
-        input: EvmEnv,
+        input: EvmEnv<Self::Block, Self::Config>,
         inspector: I,
     ) -> Self::Evm<DB, I> {
         EthEvmBuilder::new(db, input).activate_inspector(inspector).build()

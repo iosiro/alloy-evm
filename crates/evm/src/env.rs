@@ -1,54 +1,57 @@
 //! Configuration types for EVM environment.
 
 use alloy_primitives::U256;
-use revm::{
-    context::{BlockEnv, CfgEnv},
-    primitives::hardfork::SpecId,
-};
+use revm::context::Cfg;
+
+use crate::BlockSetter;
 
 /// Container type that holds both the configuration and block environment for EVM execution.
-#[derive(Debug, Clone, Default)]
-pub struct EvmEnv<Spec = SpecId> {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EvmEnv<BLOCK, CONFIG> {
     /// The configuration environment with handler settings
-    pub cfg_env: CfgEnv<Spec>,
+    pub cfg_env: CONFIG,
     /// The block environment containing block-specific data
-    pub block_env: BlockEnv,
+    pub block_env: BLOCK,
 }
 
-impl<Spec> EvmEnv<Spec> {
+impl<BLOCK, CONFIG> EvmEnv<BLOCK, CONFIG>
+where
+    BLOCK: BlockSetter,
+    CONFIG: Cfg,
+{
     /// Create a new `EvmEnv` from its components.
     ///
     /// # Arguments
     ///
     /// * `cfg_env_with_handler_cfg` - The configuration environment with handler settings
     /// * `block` - The block environment containing block-specific data
-    pub const fn new(cfg_env: CfgEnv<Spec>, block_env: BlockEnv) -> Self {
+    pub const fn new(cfg_env: CONFIG, block_env: BLOCK) -> Self {
         Self { cfg_env, block_env }
     }
 
     /// Returns a reference to the block environment.
-    pub const fn block_env(&self) -> &BlockEnv {
+    pub const fn block_env(&self) -> &BLOCK {
         &self.block_env
     }
 
     /// Returns a reference to the configuration environment.
-    pub const fn cfg_env(&self) -> &CfgEnv<Spec> {
+    pub const fn cfg_env(&self) -> &CONFIG {
         &self.cfg_env
     }
 
     /// Returns the chain ID of the environment.
-    pub const fn chainid(&self) -> u64 {
-        self.cfg_env.chain_id
+    pub fn chainid(&self) -> u64 {
+        self.cfg_env.chain_id()
     }
 
     /// Returns the spec id of the chain
-    pub const fn spec_id(&self) -> &Spec {
-        &self.cfg_env.spec
+    pub fn spec_id(&self) -> CONFIG::Spec {
+        self.cfg_env.spec()
     }
 
     /// Overrides the configured block number
-    pub const fn with_block_number(mut self, number: U256) -> Self {
-        self.block_env.number = number;
+    pub fn with_block_number(mut self, number: U256) -> Self {
+        self.block_env.set_number(number);
         self
     }
 
@@ -56,24 +59,24 @@ impl<Spec> EvmEnv<Spec> {
     /// `Some(number)`.
     ///
     /// This is intended for block overrides.
-    pub const fn with_block_number_opt(mut self, number: Option<U256>) -> Self {
+    pub fn with_block_number_opt(mut self, number: Option<U256>) -> Self {
         if let Some(number) = number {
-            self.block_env.number = number;
+            self.block_env.set_number(number);
         }
         self
     }
 
     /// Sets the block number if provided.
-    pub const fn set_block_number_opt(&mut self, number: Option<U256>) -> &mut Self {
+    pub fn set_block_number_opt(&mut self, number: Option<U256>) -> &mut Self {
         if let Some(number) = number {
-            self.block_env.number = number;
+            self.block_env.set_number(number);
         }
         self
     }
 
     /// Overrides the configured block timestamp.
-    pub const fn with_timestamp(mut self, timestamp: U256) -> Self {
-        self.block_env.timestamp = timestamp;
+    pub fn with_timestamp(mut self, timestamp: U256) -> Self {
+        self.block_env.set_timestamp(timestamp);
         self
     }
 
@@ -81,24 +84,24 @@ impl<Spec> EvmEnv<Spec> {
     /// `Some(timestamp)`.
     ///
     /// This is intended for block overrides.
-    pub const fn with_timestamp_opt(mut self, timestamp: Option<U256>) -> Self {
+    pub fn with_timestamp_opt(mut self, timestamp: Option<U256>) -> Self {
         if let Some(timestamp) = timestamp {
-            self.block_env.timestamp = timestamp;
+            self.block_env.set_timestamp(timestamp);
         }
         self
     }
 
     /// Sets the block timestamp if provided.
-    pub const fn set_timestamp_opt(&mut self, timestamp: Option<U256>) -> &mut Self {
+    pub fn set_timestamp_opt(&mut self, timestamp: Option<U256>) -> &mut Self {
         if let Some(timestamp) = timestamp {
-            self.block_env.timestamp = timestamp;
+            self.block_env.set_timestamp(timestamp);
         }
         self
     }
 
     /// Overrides the configured block base fee.
-    pub const fn with_base_fee(mut self, base_fee: u64) -> Self {
-        self.block_env.basefee = base_fee;
+    pub fn with_base_fee(mut self, base_fee: u64) -> Self {
+        self.block_env.set_basefee(base_fee);
         self
     }
 
@@ -106,24 +109,24 @@ impl<Spec> EvmEnv<Spec> {
     /// `Some(base_fee)`.
     ///
     /// This is intended for block overrides.
-    pub const fn with_base_fee_opt(mut self, base_fee: Option<u64>) -> Self {
+    pub fn with_base_fee_opt(mut self, base_fee: Option<u64>) -> Self {
         if let Some(base_fee) = base_fee {
-            self.block_env.basefee = base_fee;
+            self.block_env.set_basefee(base_fee);
         }
         self
     }
 
     /// Sets the block base fee if provided.
-    pub const fn set_base_fee_opt(&mut self, base_fee: Option<u64>) -> &mut Self {
+    pub fn set_base_fee_opt(&mut self, base_fee: Option<u64>) -> &mut Self {
         if let Some(base_fee) = base_fee {
-            self.block_env.basefee = base_fee;
+            self.block_env.set_basefee(base_fee);
         }
         self
     }
 }
 
-impl<Spec> From<(CfgEnv<Spec>, BlockEnv)> for EvmEnv<Spec> {
-    fn from((cfg_env, block_env): (CfgEnv<Spec>, BlockEnv)) -> Self {
+impl<BLOCK, CONFIG> From<(CONFIG, BLOCK)> for EvmEnv<BLOCK, CONFIG> {
+    fn from((cfg_env, block_env): (CONFIG, BLOCK)) -> Self {
         Self { cfg_env, block_env }
     }
 }

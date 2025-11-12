@@ -5,7 +5,8 @@ use alloc::boxed::Box;
 use alloy_primitives::{Address, Log, B256, U256};
 use core::{error::Error, fmt, fmt::Debug};
 use revm::{
-    context::{Block, DBErrorMarker, JournalTr},
+    context::{Block, BlockEnv, DBErrorMarker, JournalTr},
+    context_interface::block::BlobExcessGasAndPrice,
     interpreter::{SStoreResult, StateLoad},
     primitives::{StorageKey, StorageValue},
     state::{Account, AccountInfo, Bytecode},
@@ -249,5 +250,72 @@ impl<'a> fmt::Debug for EvmInternals<'a> {
             .field("internals", &self.internals)
             .field("block_env", &"{{}}")
             .finish_non_exhaustive()
+    }
+}
+/// Trait for mutating block parameters. Enables method chaining.
+pub trait BlockSetter: Block {
+    /// Set block number.
+    fn set_number(&mut self, number: U256) -> &mut Self;
+    /// Set beneficiary address.
+    fn set_beneficiary(&mut self, beneficiary: Address) -> &mut Self;
+    /// Set block timestamp.
+    fn set_timestamp(&mut self, timestamp: U256) -> &mut Self;
+    /// Set gas limit.
+    fn set_gas_limit(&mut self, gas_limit: u64) -> &mut Self;
+    /// Set base fee.
+    fn set_basefee(&mut self, basefee: u64) -> &mut Self;
+    /// Set difficulty.
+    fn set_difficulty(&mut self, difficulty: U256) -> &mut Self;
+    /// Set previous random value.
+    fn set_prevrandao(&mut self, prevrandao: Option<B256>) -> &mut Self;
+    /// Set blob excess gas and price.
+    fn set_blob_excess_gas_and_price(
+        &mut self,
+        blob_excess_gas_and_price: Option<BlobExcessGasAndPrice>,
+    ) -> &mut Self;
+}
+
+impl BlockSetter for BlockEnv {
+    fn set_number(&mut self, number: U256) -> &mut Self {
+        self.number = number;
+        self
+    }
+
+    fn set_beneficiary(&mut self, beneficiary: Address) -> &mut Self {
+        self.beneficiary = beneficiary;
+        self
+    }
+
+    fn set_timestamp(&mut self, timestamp: U256) -> &mut Self {
+        self.timestamp = timestamp;
+        self
+    }
+
+    fn set_gas_limit(&mut self, gas_limit: u64) -> &mut Self {
+        self.gas_limit = gas_limit;
+        self
+    }
+
+    fn set_basefee(&mut self, basefee: u64) -> &mut Self {
+        self.basefee = basefee;
+        self
+    }
+
+    fn set_difficulty(&mut self, difficulty: U256) -> &mut Self {
+        self.difficulty = difficulty;
+        self
+    }
+
+    fn set_prevrandao(&mut self, prevrandao: Option<B256>) -> &mut Self {
+        self.prevrandao = prevrandao;
+        self
+    }
+
+    fn set_blob_excess_gas_and_price(
+        &mut self,
+        blob_excess_gas_and_price: Option<BlobExcessGasAndPrice>,
+    ) -> &mut Self {
+        self.blob_excess_gas_and_price = blob_excess_gas_and_price;
+        self
     }
 }

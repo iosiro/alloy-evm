@@ -1,12 +1,14 @@
 use crate::{Evm, EvmEnv};
 use alloy_primitives::{Address, Bytes};
-use revm::context::{either, BlockEnv};
+use revm::context::either;
 
 impl<L, R> Evm for either::Either<L, R>
 where
     L: Evm,
     R: Evm<
         DB = L::DB,
+        Block = L::Block,
+        Config = L::Config,
         Tx = L::Tx,
         Error = L::Error,
         HaltReason = L::HaltReason,
@@ -16,6 +18,8 @@ where
     >,
 {
     type DB = L::DB;
+    type Block = L::Block;
+    type Config = L::Config;
     type Tx = L::Tx;
     type Error = L::Error;
     type HaltReason = L::HaltReason;
@@ -23,7 +27,7 @@ where
     type Precompiles = L::Precompiles;
     type Inspector = L::Inspector;
 
-    fn block(&self) -> &BlockEnv {
+    fn block(&self) -> &Self::Block {
         either::for_both!(self, evm => evm.block())
     }
 
@@ -64,7 +68,7 @@ where
         either::for_both!(self, evm => evm.transact_commit(tx))
     }
 
-    fn finish(self) -> (Self::DB, EvmEnv<Self::Spec>)
+    fn finish(self) -> (Self::DB, EvmEnv<Self::Block, Self::Config>)
     where
         Self: Sized,
     {
@@ -78,7 +82,7 @@ where
         either::for_both!(self, evm => evm.into_db())
     }
 
-    fn into_env(self) -> EvmEnv<Self::Spec>
+    fn into_env(self) -> EvmEnv<Self::Block, Self::Config>
     where
         Self: Sized,
     {

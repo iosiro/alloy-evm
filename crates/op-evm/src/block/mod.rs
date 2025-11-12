@@ -21,7 +21,11 @@ use op_alloy_consensus::OpDepositReceipt;
 use op_revm::transaction::deposit::DEPOSIT_TRANSACTION_TYPE;
 pub use receipt_builder::OpAlloyReceiptBuilder;
 use receipt_builder::OpReceiptBuilder;
-use revm::{context::result::ResultAndState, database::State, DatabaseCommit, Inspector};
+use revm::{
+    context::{result::ResultAndState, Block},
+    database::State,
+    DatabaseCommit, Inspector,
+};
 
 mod canyon;
 pub mod receipt_builder;
@@ -69,7 +73,7 @@ where
     pub fn new(evm: E, ctx: OpBlockExecutionCtx, spec: Spec, receipt_builder: R) -> Self {
         Self {
             is_regolith: spec
-                .is_regolith_active_at_timestamp(evm.block().timestamp.saturating_to()),
+                .is_regolith_active_at_timestamp(evm.block().timestamp().saturating_to()),
             evm,
             system_caller: SystemCaller::new(spec.clone()),
             spec,
@@ -98,7 +102,7 @@ where
     fn apply_pre_execution_changes(&mut self) -> Result<(), BlockExecutionError> {
         // Set state clear flag if the block is after the Spurious Dragon hardfork.
         let state_clear_flag =
-            self.spec.is_spurious_dragon_active_at_block(self.evm.block().number.saturating_to());
+            self.spec.is_spurious_dragon_active_at_block(self.evm.block().number().saturating_to());
         self.evm.db_mut().set_state_clear_flag(state_clear_flag);
 
         self.system_caller.apply_blockhashes_contract_call(self.ctx.parent_hash, &mut self.evm)?;
@@ -111,7 +115,7 @@ where
         // the above check for empty blocks will never be hit on OP chains.
         ensure_create2_deployer(
             &self.spec,
-            self.evm.block().timestamp.saturating_to(),
+            self.evm.block().timestamp().saturating_to(),
             self.evm.db_mut(),
         )
         .map_err(BlockExecutionError::other)?;
@@ -127,7 +131,7 @@ where
 
         // The sum of the transaction's gas limit, Tg, and the gas utilized in this block prior,
         // must be no greater than the block's gasLimit.
-        let block_available_gas = self.evm.block().gas_limit - self.gas_used;
+        let block_available_gas = self.evm.block().gas_limit() - self.gas_used;
         if tx.tx().gas_limit() > block_available_gas && (self.is_regolith || !is_deposit) {
             return Err(BlockValidationError::TransactionGasLimitMoreThanAvailableBlockGas {
                 transaction_gas_limit: tx.tx().gas_limit(),
@@ -200,7 +204,7 @@ where
                         // transactions.
                         deposit_receipt_version: (is_deposit
                             && self.spec.is_canyon_active_at_timestamp(
-                                self.evm.block().timestamp.saturating_to(),
+                                self.evm.block().timestamp().saturating_to(),
                             ))
                         .then_some(1),
                     })
