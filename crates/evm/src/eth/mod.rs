@@ -12,7 +12,6 @@ use revm::{
     handler::{instructions::EthInstructions, EthFrame, EthPrecompiles, PrecompileProvider},
     inspector::NoOpInspector,
     interpreter::{interpreter::EthInterpreter, InterpreterResult},
-    precompile::{PrecompileSpecId, Precompiles},
     primitives::hardfork::SpecId,
     Context, ExecuteEvm, InspectEvm, Inspector, MainBuilder, MainContext, SystemCallEvm,
 };
@@ -30,16 +29,17 @@ pub type EthEvmContext<DB> = Context<BlockEnv, TxEnv, CfgEnv, DB>;
 
 /// Helper builder to construct `EthEvm` instances in a unified way.
 #[derive(Debug)]
-pub struct EthEvmBuilder<DB: Database, I = NoOpInspector> {
+pub struct EthEvmBuilder<DB: Database, P: PrecompileProvider<EthEvmContext<DB>>, I = NoOpInspector>
+{
     db: DB,
     block_env: BlockEnv,
     cfg_env: CfgEnv,
     inspector: I,
     inspect: bool,
-    precompiles: Option<PrecompilesMap>,
+    precompiles: Option<P>,
 }
 
-impl<DB: Database> EthEvmBuilder<DB, NoOpInspector> {
+impl<DB: Database, P: PrecompileProvider<EthEvmContext<DB>>> EthEvmBuilder<DB, P, NoOpInspector> {
     /// Creates a builder from the provided `EvmEnv` and database.
     pub const fn new(db: DB, env: EvmEnv<BlockEnv, CfgEnv>) -> Self {
         Self {
@@ -53,9 +53,9 @@ impl<DB: Database> EthEvmBuilder<DB, NoOpInspector> {
     }
 }
 
-impl<DB: Database, I> EthEvmBuilder<DB, I> {
+impl<DB: Database, P: PrecompileProvider<EthEvmContext<DB>> + Default, I> EthEvmBuilder<DB, P, I> {
     /// Sets a custom inspector
-    pub fn inspector<J>(self, inspector: J) -> EthEvmBuilder<DB, J> {
+    pub fn inspector<J>(self, inspector: J) -> EthEvmBuilder<DB, P, J> {
         EthEvmBuilder {
             db: self.db,
             block_env: self.block_env,
@@ -67,7 +67,7 @@ impl<DB: Database, I> EthEvmBuilder<DB, I> {
     }
 
     /// Sets a custom inspector and enables invoking it during transaction execution.
-    pub fn activate_inspector<J>(self, inspector: J) -> EthEvmBuilder<DB, J> {
+    pub fn activate_inspector<J>(self, inspector: J) -> EthEvmBuilder<DB, P, J> {
         self.inspector(inspector).inspect()
     }
 
@@ -84,21 +84,23 @@ impl<DB: Database, I> EthEvmBuilder<DB, I> {
 
     /// Overrides the precompiles map. If not provided, it will be derived from the `SpecId` in
     /// `CfgEnv`.
-    pub fn precompiles(mut self, precompiles: PrecompilesMap) -> Self {
+    pub fn precompiles(mut self, precompiles: P) -> Self {
         self.precompiles = Some(precompiles);
         self
     }
 
     /// Builds the `EthEvm` instance.
-    pub fn build(self) -> EthEvm<DB, I, PrecompilesMap>
+    pub fn build(self) -> EthEvm<DB, I, PrecompilesMap<EthEvmContext<DB>, P>>
     where
         I: Inspector<EthEvmContext<DB>>,
     {
         let precompiles = match self.precompiles {
             Some(p) => p,
-            None => PrecompilesMap::from_static(Precompiles::new(PrecompileSpecId::from_spec_id(
-                self.cfg_env.spec,
-            ))),
+            None => {
+                let mut precompiles = P::default();
+                precompiles.set_spec(self.cfg_env.spec);
+                precompiles
+            }
         };
 
         let inner = Context::mainnet()
@@ -106,7 +108,7 @@ impl<DB: Database, I> EthEvmBuilder<DB, I> {
             .with_cfg(self.cfg_env)
             .with_db(self.db)
             .build_mainnet_with_inspector(self.inspector)
-            .with_precompiles(precompiles);
+            .with_precompiles(PrecompilesMap::new(precompiles));
 
         EthEvm { inner, inspect: self.inspect }
     }
@@ -260,7 +262,7 @@ where
 pub struct EthEvmFactory;
 
 impl EvmFactory for EthEvmFactory {
-    type Evm<DB: Database, I: Inspector<EthEvmContext<DB>>> = EthEvm<DB, I, Self::Precompiles>;
+    type Evm<DB: Database, I: Inspector<EthEvmContext<DB>>> = EthEvm<DB, I, Self::Precompiles<DB>>;
     type Context<DB: Database> = Context<BlockEnv, TxEnv, CfgEnv, DB>;
     type Block = BlockEnv;
     type Config = CfgEnv;
@@ -268,7 +270,7 @@ impl EvmFactory for EthEvmFactory {
     type Error<DBError: core::error::Error + Send + Sync + 'static> = EVMError<DBError>;
     type HaltReason = HaltReason;
     type Spec = SpecId;
-    type Precompiles = PrecompilesMap;
+    type Precompiles<DB: Database> = PrecompilesMap<Self::Context<DB>, EthPrecompiles>;
 
     fn create_evm<DB: Database>(
         &self,
@@ -325,7 +327,7 @@ mod tests {
 
             // precompile should NOT be available in early spec
             assert!(
-                early_evm.precompiles_mut().get(&precompile_addr).is_none(),
+                !early_evm.precompiles_mut().contains(&precompile_addr),
                 "{name} precompile at {precompile_addr:?} should NOT be available for early spec {early_spec:?}"
             );
 
@@ -338,7 +340,7 @@ mod tests {
 
             // precompile should be available in later spec
             assert!(
-                later_evm.precompiles_mut().get(&precompile_addr).is_some(),
+                later_evm.precompiles_mut().contains(&precompile_addr),
                 "{name} precompile at {precompile_addr:?} should be available for later spec {later_spec:?}"
             );
         }

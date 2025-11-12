@@ -5,7 +5,7 @@ use alloc::boxed::Box;
 use alloy_primitives::{Address, Log, B256, U256};
 use core::{error::Error, fmt, fmt::Debug};
 use revm::{
-    context::{Block, BlockEnv, DBErrorMarker, JournalTr},
+    context::{Block, BlockEnv, ContextTr, DBErrorMarker, JournalTr},
     context_interface::block::BlobExcessGasAndPrice,
     interpreter::{SStoreResult, StateLoad},
     primitives::{StorageKey, StorageValue},
@@ -74,6 +74,8 @@ trait EvmInternalsTr: Database<Error = ErasedError> + Debug {
     ) -> Result<StateLoad<SStoreResult>, EvmInternalsError>;
 
     fn log(&mut self, log: Log);
+
+    fn block(&self) -> &dyn Block;
 }
 
 /// Helper internal struct for implementing [`EvmInternals`].
@@ -82,7 +84,8 @@ struct EvmInternalsImpl<'a, T>(&'a mut T);
 
 impl<T> revm::Database for EvmInternalsImpl<'_, T>
 where
-    T: JournalTr<Database: Database>,
+    T: ContextTr,
+    T::Db: Database,
 {
     type Error = ErasedError;
 
@@ -109,20 +112,21 @@ where
 
 impl<T> EvmInternalsTr for EvmInternalsImpl<'_, T>
 where
-    T: JournalTr<Database: Database> + Debug,
+    T: ContextTr + Debug,
+    T::Db: Database,
 {
     fn load_account(
         &mut self,
         address: Address,
     ) -> Result<StateLoad<&mut Account>, EvmInternalsError> {
-        self.0.load_account(address).map_err(EvmInternalsError::database)
+        self.0.journal_mut().load_account(address).map_err(EvmInternalsError::database)
     }
 
     fn load_account_code(
         &mut self,
         address: Address,
     ) -> Result<StateLoad<&mut Account>, EvmInternalsError> {
-        self.0.load_account_code(address).map_err(EvmInternalsError::database)
+        self.0.journal_mut().load_account_code(address).map_err(EvmInternalsError::database)
     }
 
     fn sload(
@@ -130,15 +134,15 @@ where
         address: Address,
         key: StorageKey,
     ) -> Result<StateLoad<StorageValue>, EvmInternalsError> {
-        self.0.sload(address, key).map_err(EvmInternalsError::database)
+        self.0.journal_mut().sload(address, key).map_err(EvmInternalsError::database)
     }
 
     fn touch_account(&mut self, address: Address) {
-        self.0.touch_account(address);
+        self.0.journal_mut().touch_account(address);
     }
 
     fn set_code(&mut self, address: Address, code: Bytecode) {
-        self.0.set_code(address, code);
+        self.0.journal_mut().set_code(address, code);
     }
 
     fn sstore(
@@ -147,42 +151,46 @@ where
         key: StorageKey,
         value: StorageValue,
     ) -> Result<StateLoad<SStoreResult>, EvmInternalsError> {
-        self.0.sstore(address, key, value).map_err(EvmInternalsError::database)
+        self.0.journal_mut().sstore(address, key, value).map_err(EvmInternalsError::database)
     }
 
     fn log(&mut self, log: Log) {
-        self.0.log(log);
+        self.0.journal_mut().log(log);
+    }
+
+    fn block(&self) -> &dyn Block {
+        self.0.block()
     }
 }
 
 /// Helper type exposing hooks into EVM and access to evm internal settings.
 pub struct EvmInternals<'a> {
     internals: Box<dyn EvmInternalsTr + 'a>,
-    block_env: &'a (dyn Block + 'a),
 }
 
 impl<'a> EvmInternals<'a> {
     /// Creates a new [`EvmInternals`] instance.
-    pub fn new<T>(journal: &'a mut T, block_env: &'a dyn Block) -> Self
+    pub fn new<T>(journal: &'a mut T) -> Self
     where
-        T: JournalTr<Database: Database> + Debug,
+        T: ContextTr + Debug,
+        T::Db: Database,
     {
-        Self { internals: Box::new(EvmInternalsImpl(journal)), block_env }
+        Self { internals: Box::new(EvmInternalsImpl(journal)) }
     }
 
     /// Returns the  evm's block information.
-    pub const fn block_env(&self) -> impl Block + 'a {
-        self.block_env
+    pub fn block_env(&self) -> &dyn Block {
+        self.internals.block()
     }
 
     /// Returns the current block number.
     pub fn block_number(&self) -> U256 {
-        self.block_env.number()
+        self.block_env().number()
     }
 
     /// Returns the current block timestamp.
     pub fn block_timestamp(&self) -> U256 {
-        self.block_env.timestamp()
+        self.block_env().timestamp()
     }
 
     /// Returns a mutable reference to [`Database`] implementation with erased error type.
@@ -246,12 +254,10 @@ impl<'a> EvmInternals<'a> {
 
 impl<'a> fmt::Debug for EvmInternals<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("EvmInternals")
-            .field("internals", &self.internals)
-            .field("block_env", &"{{}}")
-            .finish_non_exhaustive()
+        f.debug_struct("EvmInternals").field("internals", &self.internals).finish_non_exhaustive()
     }
 }
+
 /// Trait for mutating block parameters. Enables method chaining.
 pub trait BlockSetter: Block {
     /// Set block number.

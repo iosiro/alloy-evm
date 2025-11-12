@@ -4,7 +4,7 @@
     html_favicon_url = "https://raw.githubusercontent.com/alloy-rs/core/main/assets/favicon.ico"
 )]
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
-#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(not(feature = "std"), no_std)]
 
 extern crate alloc;
@@ -163,7 +163,7 @@ where
 pub struct OpEvmFactory;
 
 impl EvmFactory for OpEvmFactory {
-    type Evm<DB: Database, I: Inspector<OpContext<DB>>> = OpEvm<DB, I, Self::Precompiles>;
+    type Evm<DB: Database, I: Inspector<OpContext<DB>>> = OpEvm<DB, I, Self::Precompiles<DB>>;
     type Context<DB: Database> = OpContext<DB>;
     type Tx = OpTransaction<TxEnv>;
     type Error<DBError: core::error::Error + Send + Sync + 'static> =
@@ -172,7 +172,7 @@ impl EvmFactory for OpEvmFactory {
     type Spec = OpSpecId;
     type Block = BlockEnv;
     type Config = CfgEnv<OpSpecId>;
-    type Precompiles = PrecompilesMap;
+    type Precompiles<DB: Database> = PrecompilesMap<Self::Context<DB>, OpPrecompiles>;
 
     fn create_evm<DB: Database>(
         &self,
@@ -186,9 +186,7 @@ impl EvmFactory for OpEvmFactory {
                 .with_block(input.block_env)
                 .with_cfg(input.cfg_env)
                 .build_op_with_inspector(NoOpInspector {})
-                .with_precompiles(PrecompilesMap::from_static(
-                    OpPrecompiles::new_with_spec(spec_id).precompiles(),
-                )),
+                .with_precompiles(OpPrecompiles::new_with_spec(spec_id).into()),
             inspect: false,
         }
     }
@@ -206,9 +204,7 @@ impl EvmFactory for OpEvmFactory {
                 .with_block(input.block_env)
                 .with_cfg(input.cfg_env)
                 .build_op_with_inspector(inspector)
-                .with_precompiles(PrecompilesMap::from_static(
-                    OpPrecompiles::new_with_spec(spec_id).precompiles(),
-                )),
+                .with_precompiles(OpPrecompiles::new_with_spec(spec_id).into()),
             inspect: true,
         }
     }
