@@ -5,7 +5,7 @@ use alloy_consensus::transaction::TxHashRef;
 use alloy_primitives::{Address, Bytes, B256};
 use core::{error::Error, fmt::Debug, hash::Hash};
 use revm::{
-    context::{result::ExecutionResult, BlockEnv},
+    context::{result::ExecutionResult, Block, Cfg},
     context_interface::{
         result::{HaltReasonTr, ResultAndState},
         ContextTr,
@@ -27,6 +27,10 @@ impl<T> Database for T where T: revm::Database<Error: Error + Send + Sync + 'sta
 pub trait Evm {
     /// Database type held by the EVM.
     type DB;
+    /// The block environment that the EVM will use for execution.
+    type Block: Block;
+    /// The configuration environment that the EVM will use for execution.
+    type Config: Cfg;
     /// The transaction object that the EVM will execute.
     ///
     /// This type represents the transaction environment that the EVM operates on internally.
@@ -59,8 +63,8 @@ pub trait Evm {
     /// Evm inspector.
     type Inspector;
 
-    /// Reference to [`BlockEnv`].
-    fn block(&self) -> &BlockEnv;
+    /// Reference to [`Block`].
+    fn block(&self) -> &Self::Block;
 
     /// Returns the chain ID of the environment.
     fn chain_id(&self) -> u64;
@@ -92,7 +96,7 @@ pub trait Evm {
     /// Executes a system call.
     ///
     /// Note: this will only keep the target `contract` in the state. This is done because revm is
-    /// loading [`BlockEnv::beneficiary`] into state by default, and we need to avoid it by also
+    /// loading [`Block::beneficiary()`] into state by default, and we need to avoid it by also
     /// covering edge cases when beneficiary is set to the system contract address.
     fn transact_system_call(
         &mut self,
@@ -126,7 +130,7 @@ pub trait Evm {
     }
 
     /// Consumes the EVM and returns the inner [`EvmEnv`].
-    fn finish(self) -> (Self::DB, EvmEnv<Self::Spec>)
+    fn finish(self) -> (Self::DB, EvmEnv<Self::Block, Self::Config>)
     where
         Self: Sized;
 
@@ -139,7 +143,7 @@ pub trait Evm {
     }
 
     /// Consumes the EVM and returns the inner [`EvmEnv`].
-    fn into_env(self) -> EvmEnv<Self::Spec>
+    fn into_env(self) -> EvmEnv<Self::Block, Self::Config>
     where
         Self: Sized,
     {
@@ -265,6 +269,10 @@ pub trait EvmFactory {
 
     /// The EVM context for inspectors
     type Context<DB: Database>: ContextTr<Db = DB, Journal: JournalExt>;
+    /// The block environment that the EVM will use for execution.
+    type Block: Block;
+    /// The configuration environment that the EVM will use for execution.
+    type Config: Cfg;
     /// Transaction environment.
     type Tx: IntoTxEnv<Self::Tx>;
     /// EVM error. See [`Evm::Error`].
@@ -280,7 +288,7 @@ pub trait EvmFactory {
     fn create_evm<DB: Database>(
         &self,
         db: DB,
-        evm_env: EvmEnv<Self::Spec>,
+        evm_env: EvmEnv<Self::Block, Self::Config>,
     ) -> Self::Evm<DB, NoOpInspector>;
 
     /// Creates a new instance of an EVM with an inspector.
@@ -290,7 +298,7 @@ pub trait EvmFactory {
     fn create_evm_with_inspector<DB: Database, I: Inspector<Self::Context<DB>>>(
         &self,
         db: DB,
-        input: EvmEnv<Self::Spec>,
+        input: EvmEnv<Self::Block, Self::Config>,
         inspector: I,
     ) -> Self::Evm<DB, I>;
 }
@@ -301,7 +309,7 @@ pub trait EvmFactoryExt: EvmFactory {
     fn create_tracer<DB, I>(
         &self,
         db: DB,
-        input: EvmEnv<Self::Spec>,
+        input: EvmEnv<Self::Block, Self::Config>,
         fused_inspector: I,
     ) -> TxTracer<Self::Evm<DB, I>>
     where

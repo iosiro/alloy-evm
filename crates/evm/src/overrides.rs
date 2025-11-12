@@ -3,6 +3,7 @@
 //! This module provides helper functions for RPC implementations, including:
 //! - Block and state overrides
 
+use crate::BlockSetter;
 use alloc::collections::BTreeMap;
 use alloy_primitives::{keccak256, map::HashMap, Address, B256, U256};
 use alloy_rpc_types_eth::{
@@ -11,7 +12,6 @@ use alloy_rpc_types_eth::{
 };
 use revm::{
     bytecode::BytecodeDecodeError,
-    context::BlockEnv,
     database::{CacheDB, State},
     state::{Account, AccountStatus, Bytecode, EvmStorageSlot},
     Database, DatabaseCommit,
@@ -39,8 +39,11 @@ pub trait OverrideBlockHashes {
     fn override_block_hashes(&mut self, block_hashes: BTreeMap<u64, B256>);
 
     /// Applies the given block overrides to the env and updates overridden block hashes.
-    fn apply_block_overrides(&mut self, overrides: BlockOverrides, env: &mut BlockEnv)
-    where
+    fn apply_block_overrides<BLOCK: BlockSetter>(
+        &mut self,
+        overrides: BlockOverrides,
+        env: &mut BLOCK,
+    ) where
         Self: Sized,
     {
         apply_block_overrides(overrides, self, env);
@@ -62,9 +65,10 @@ impl<DB> OverrideBlockHashes for State<DB> {
 }
 
 /// Applies the given block overrides to the env and updates overridden block hashes in the db.
-pub fn apply_block_overrides<DB>(overrides: BlockOverrides, db: &mut DB, env: &mut BlockEnv)
+pub fn apply_block_overrides<DB, BLOCK>(overrides: BlockOverrides, db: &mut DB, env: &mut BLOCK)
 where
     DB: OverrideBlockHashes,
+    BLOCK: BlockSetter,
 {
     let BlockOverrides {
         number,
@@ -83,25 +87,25 @@ where
     }
 
     if let Some(number) = number {
-        env.number = number.saturating_to();
+        env.set_number(number.saturating_to());
     }
     if let Some(difficulty) = difficulty {
-        env.difficulty = difficulty;
+        env.set_difficulty(difficulty);
     }
     if let Some(time) = time {
-        env.timestamp = U256::from(time);
+        env.set_timestamp(U256::from(time));
     }
     if let Some(gas_limit) = gas_limit {
-        env.gas_limit = gas_limit;
+        env.set_gas_limit(gas_limit);
     }
     if let Some(coinbase) = coinbase {
-        env.beneficiary = coinbase;
+        env.set_beneficiary(coinbase);
     }
     if let Some(random) = random {
-        env.prevrandao = Some(random);
+        env.set_prevrandao(Some(random));
     }
     if let Some(base_fee) = base_fee {
-        env.basefee = base_fee.saturating_to();
+        env.set_basefee(base_fee.saturating_to());
     }
 }
 

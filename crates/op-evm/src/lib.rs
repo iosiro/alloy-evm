@@ -20,7 +20,7 @@ use op_revm::{
     OpTransaction, OpTransactionError,
 };
 use revm::{
-    context::{BlockEnv, TxEnv},
+    context::{BlockEnv, CfgEnv, TxEnv},
     context_interface::result::{EVMError, ResultAndState},
     handler::{instructions::EthInstructions, PrecompileProvider},
     inspector::NoOpInspector,
@@ -99,6 +99,8 @@ where
     type Spec = OpSpecId;
     type Precompiles = P;
     type Inspector = I;
+    type Block = BlockEnv;
+    type Config = CfgEnv<OpSpecId>;
 
     fn block(&self) -> &BlockEnv {
         &self.block
@@ -128,7 +130,7 @@ where
         self.inner.system_call_with_caller(caller, contract, data)
     }
 
-    fn finish(self) -> (Self::DB, EvmEnv<Self::Spec>) {
+    fn finish(self) -> (Self::DB, EvmEnv<Self::Block, Self::Config>) {
         let Context { block: block_env, cfg: cfg_env, journaled_state, .. } = self.inner.0.ctx;
 
         (journaled_state.database, EvmEnv { block_env, cfg_env })
@@ -168,12 +170,14 @@ impl EvmFactory for OpEvmFactory {
         EVMError<DBError, OpTransactionError>;
     type HaltReason = OpHaltReason;
     type Spec = OpSpecId;
+    type Block = BlockEnv;
+    type Config = CfgEnv<OpSpecId>;
     type Precompiles = PrecompilesMap;
 
     fn create_evm<DB: Database>(
         &self,
         db: DB,
-        input: EvmEnv<OpSpecId>,
+        input: EvmEnv<Self::Block, Self::Config>,
     ) -> Self::Evm<DB, NoOpInspector> {
         let spec_id = input.cfg_env.spec;
         OpEvm {
@@ -192,7 +196,7 @@ impl EvmFactory for OpEvmFactory {
     fn create_evm_with_inspector<DB: Database, I: Inspector<Self::Context<DB>>>(
         &self,
         db: DB,
-        input: EvmEnv<OpSpecId>,
+        input: EvmEnv<Self::Block, Self::Config>,
         inspector: I,
     ) -> Self::Evm<DB, I> {
         let spec_id = input.cfg_env.spec;
