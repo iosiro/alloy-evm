@@ -9,11 +9,11 @@ use alloy_primitives::{
 };
 use core::fmt::Debug;
 use revm::{
-    context::LocalContextTr,
+    context::JournalTr,
     handler::{EthPrecompiles, PrecompileProvider},
     interpreter::{CallInput, Gas, InputsImpl, InstructionResult, InterpreterResult},
     precompile::{PrecompileError, PrecompileFn, PrecompileId, PrecompileResult, Precompiles},
-    Context, Journal,
+    Context,
 };
 
 /// A mapping of precompile contracts that can be either static (builtin) or dynamic.
@@ -346,13 +346,16 @@ impl core::fmt::Debug for PrecompilesMap {
     }
 }
 
-impl<BlockEnv, TxEnv, CfgEnv, DB, Chain>
-    PrecompileProvider<Context<BlockEnv, TxEnv, CfgEnv, DB, Journal<DB>, Chain>> for PrecompilesMap
+impl<BlockEnv, TxEnv, CfgEnv, DB, Journal, Chain, Local>
+    PrecompileProvider<Context<BlockEnv, TxEnv, CfgEnv, DB, Journal, Chain, Local>>
+    for PrecompilesMap
 where
     BlockEnv: revm::context::Block,
     TxEnv: revm::context::Transaction,
     CfgEnv: revm::context::Cfg,
     DB: Database,
+    Journal: JournalTr<Database = DB> + Debug,
+    Local: revm::context::LocalContextTr,
 {
     type Output = InterpreterResult;
 
@@ -362,7 +365,7 @@ where
 
     fn run(
         &mut self,
-        context: &mut Context<BlockEnv, TxEnv, CfgEnv, DB, Journal<DB>, Chain>,
+        context: &mut Context<BlockEnv, TxEnv, CfgEnv, DB, Journal, Chain, Local>,
         address: &Address,
         inputs: &InputsImpl,
         _is_static: bool,
